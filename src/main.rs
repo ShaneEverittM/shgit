@@ -1,6 +1,15 @@
+use clap::{App, Arg, ArgMatches};
+use std::collections::HashSet;
+use std::io::Result as IOResult;
 use std::path::PathBuf;
 
-use clap::{App, Arg, ArgMatches};
+mod blob;
+mod database;
+mod workspace;
+
+use blob::Blob;
+use database::Database;
+use workspace::Workspace;
 
 fn parse_args() -> ArgMatches<'static> {
     App::new("shgit")
@@ -16,6 +25,7 @@ fn parse_args() -> ArgMatches<'static> {
                     .index(1),
             ),
         )
+        .subcommand(App::new("commit").about("Commit current changes"))
         .get_matches()
 }
 
@@ -23,8 +33,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command line arguments
     let matches = parse_args();
 
-    // Only argument is subcommand init, parse its arguments
     maybe_init(&matches)?;
+    maybe_commit(&matches)?;
+
+    Ok(())
+}
+
+fn maybe_commit(matches: &ArgMatches) -> Result<(), std::io::Error> {
+    if matches.subcommand_matches("commit").is_some() {
+        let ws = Workspace::in_dir(std::env::current_dir()?);
+        let files = ws.list_files()?;
+        println!("{:#?}", &files);
+        commit(files)?;
+        Ok(())
+    } else {
+        Ok(())
+    }
+}
+
+fn commit(files: HashSet<PathBuf>) -> IOResult<()> {
+    let root_path = std::env::current_dir()?;
+    let git_path = root_path.join(".git");
+    let db_path = git_path.join("objects");
+
+    let workspace = Workspace::in_dir(root_path);
+    let database = Database::in_dir(db_path);
+
+    for file in files {
+        let data = workspace.read_file(file)?;
+        let blob = Blob::from(data);
+
+        database.store(blob)?;
+    }
 
     Ok(())
 }
