@@ -4,11 +4,17 @@ use std::io::Result as IOResult;
 use std::path::PathBuf;
 
 mod blob;
+mod blob_type;
 mod database;
+mod entry;
+mod tree;
 mod workspace;
 
+use crate::blob_type::BlobLike;
 use blob::Blob;
 use database::Database;
+use entry::Entry;
+use tree::Tree;
 use workspace::Workspace;
 
 fn parse_args() -> ArgMatches<'static> {
@@ -45,26 +51,39 @@ fn maybe_commit(matches: &ArgMatches) -> Result<(), std::io::Error> {
         let files = ws.list_files()?;
         println!("{:#?}", &files);
         commit(files)?;
-        Ok(())
-    } else {
-        Ok(())
     }
+    Ok(())
 }
 
 fn commit(files: HashSet<PathBuf>) -> IOResult<()> {
     let root_path = std::env::current_dir()?;
-    let git_path = root_path.join(".git");
+    let git_path = root_path.join(".shgit");
     let db_path = git_path.join("objects");
 
     let workspace = Workspace::in_dir(root_path);
     let database = Database::in_dir(db_path);
 
+    let mut entries = Vec::new();
     for file in files {
-        let data = workspace.read_file(file)?;
-        let blob = Blob::from(data);
+        let data = workspace.read_file(&file)?;
+        let mut blob = Blob::from(data);
 
-        database.store(blob)?;
+        database.store(&mut blob)?;
+
+        let file_name = file
+            .file_name()
+            .unwrap()
+            .to_os_string()
+            .into_string()
+            .unwrap();
+
+        entries.push(Entry::from(file_name, blob.get_oid().to_string()));
     }
+
+    let mut tree = Tree::from(entries);
+    database.store(&mut tree)?;
+
+    println!("{}", tree.get_oid());
 
     Ok(())
 }
@@ -79,7 +98,7 @@ fn maybe_init(matches: &ArgMatches) -> Result<(), std::io::Error> {
 }
 
 fn init(root_path: PathBuf) -> Result<(), std::io::Error> {
-    let git_path = root_path.join(".git");
+    let git_path = root_path.join(".shgit");
     ["objects", "refs"]
         .iter()
         .map(|dir| git_path.join(dir))

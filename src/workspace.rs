@@ -14,7 +14,7 @@ impl Workspace {
             let mut i = HashSet::new();
             i.insert(path.join("."));
             i.insert(path.join(".."));
-            i.insert(path.join(".git"));
+            i.insert(path.join(".shgit"));
             i
         };
 

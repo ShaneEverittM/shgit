@@ -6,7 +6,7 @@ use hex::ToHex;
 use rand::{distributions::Alphanumeric, Rng};
 use sha1::{Digest, Sha1};
 
-use crate::Blob;
+use crate::blob_type::BlobLike;
 use std::fs::OpenOptions;
 use std::io::{Result as IOResult, Write};
 
@@ -22,28 +22,33 @@ impl Database {
     }
 
     /// Stores the given blob in the database.
-    pub fn store(&self, blob: Blob) -> IOResult<()> {
+    pub fn store<B: BlobLike>(&self, blob: &mut B) -> IOResult<()> {
         // Base vec that the blob will serialize to, start with kind
         let mut serialized = blob.kind().to_string().to_lowercase().as_bytes().to_vec();
 
         // Then a space
         serialized.push(b' ');
 
+        // Serialize so we know the length
+        let mut blob_bytes = blob.to_bytes();
+
         // Then the length
-        serialized.append(&mut blob.len().to_string().as_bytes().to_vec());
+        serialized.append(&mut blob_bytes.len().to_string().as_bytes().to_vec());
 
         // End the header with a null byte
         serialized.push(b'\0');
 
         // Now the actual data
-        serialized.append(&mut blob.to_bytes());
+        serialized.append(&mut blob_bytes);
 
-        // Put the data in a SHA1 hasher
+        // Run the whole thing through SHA1, use for filename
         let mut hasher = Sha1::new();
         hasher.update(&serialized);
 
         // Pull out the hash as a string, then encode it as hex
-        let oid = hasher.finalize().to_vec().encode_hex();
+        let oid: String = hasher.finalize().to_vec().encode_hex();
+
+        blob.set_oid(&oid);
 
         // Write to .git/objects/
         self.write_object(oid, serialized)
