@@ -1,19 +1,26 @@
+use chrono::prelude::*;
 use clap::{App, Arg, ArgMatches};
 use std::collections::HashSet;
-use std::io::Result as IOResult;
+use std::io::{Read, Result as IOResult, Write};
 use std::path::PathBuf;
 
+mod author;
 mod blob;
 mod blob_type;
+mod commit;
 mod database;
 mod entry;
 mod tree;
 mod workspace;
 
-use crate::blob_type::BlobLike;
+use author::Author;
 use blob::Blob;
+use blob_type::BlobLike;
+use commit::Commit;
 use database::Database;
 use entry::Entry;
+use std::fs::OpenOptions;
+use std::time::SystemTime;
 use tree::Tree;
 use workspace::Workspace;
 
@@ -83,7 +90,39 @@ fn commit(files: HashSet<PathBuf>) -> IOResult<()> {
     let mut tree = Tree::from(entries);
     database.store(&mut tree)?;
 
-    println!("{}", tree.get_oid());
+    let name = std::env::var("GIT_AUTHOR_NAME").unwrap();
+    let email = std::env::var("GIT_AUTHOR_EMAIL").unwrap();
+
+    let local: DateTime<Local> = Local::now();
+
+    let author = Author::new(
+        name,
+        email,
+        format!("{} {}", local.timestamp(), local.offset()),
+    );
+    let mut message = String::new();
+    std::io::stdin().read_to_string(&mut message)?;
+
+    let mut commit = Commit::new(tree.get_oid().into(), author, message.clone());
+    database.store(&mut commit)?;
+
+    let head_path = git_path.join("HEAD");
+    let mut file = if head_path.exists() {
+        OpenOptions::new().read(true).write(true).open(head_path)?
+    } else {
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(head_path)?
+    };
+    file.write_all(commit.get_oid().as_bytes())?;
+
+    println!(
+        "[(root-commit) {}] {}",
+        commit.get_oid(),
+        message.lines().next().unwrap()
+    );
 
     Ok(())
 }

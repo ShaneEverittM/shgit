@@ -4,6 +4,7 @@ use derive_more::Display;
 pub enum BlobKind {
     Blob,
     Tree,
+    Commit,
 }
 
 /// Used by Database for serialization
